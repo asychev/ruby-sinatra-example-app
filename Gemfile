@@ -2,6 +2,7 @@ source 'https://rubygems.org'
 
 gem 'sinatra'
 gem 'httparty'
+gem 'prometheus-client'
 
 group :test, :development do
   gem 'rspec'
