@@ -1,0 +1,75 @@
+version: 2
+
+jobs:
+  test:
+    working_directory: ~/circleci-ruby-sinatra-example-app
+    docker:
+      - image: circleci/ruby:2.3.8
+    steps:
+      - checkout
+
+      # Restore bundle cache
+      - cache-restore:
+          keys:
+            - ruby-sinatra-example-app-{{ checksum "Gemfile.lock" }}
+            - ruby-sinatra-example-app-
+
+      # Bundle install dependencies
+      - run:
+          name: Bundle install
+          command: bundle check || bundle install --deployment --with development test --jobs=2 --retry=3
+
+      # Store bundle cache
+      - cache-save:
+          key: ruby-sinatra-example-app-{{ checksum "Gemfile.lock" }}
+          paths:
+            - vendor/bundle
+
+      # Run RSpec tests
+      - run:
+          name: RSpec tests
+          command: bundle exec rspec --format progress --format RspecJunitFormatter -o ~/test-results/rspec/results.xml
+
+      # Save artifacts
+      - store_test_results:
+          path: ~/test-results/
+
+  docker_image:
+    working_directory: ~/circleci-ruby-sinatra-example-app
+    docker:
+      - image: docker:18.06.0-ce-git
+    steps:
+      - checkout
+
+      - setup_remote_docker:
+          version: 18.06.0-ce
+
+      - run:
+          name: Docker build
+          command: docker build -t app .
+
+      - run:
+          name: Docker push
+          command: |
+            if [ ! -z "${CIRCLE_TAG}" ]; then
+              echo $DOCKER_PASSWORD | base64 -d | docker login -u $DOCKER_USER --password-stdin
+              docker tag app "${DOCKER_REPOSITORY}:${CIRCLE_TAG}"
+              docker push "${DOCKER_REPOSITORY}:${CIRCLE_TAG}"
+            fi
+
+workflows:
+  version: 2
+  test-and-push-image:
+    jobs:
+      - test:
+          filters:
+            tags:
+              only: /^v.*/
+      - docker_image:
+          requires:
+            - test
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              ignore: /.*/
